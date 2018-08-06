@@ -8,7 +8,7 @@
 #include <RFM69OOKregisters.h>
 #include <SimpleFIFO.h>
 
-
+#define DEBUGGING 1
 #define TSIZE 400
 #define MAX_0_DUR 100000 // 100 ms
 #define MIN_1_DUR 50 // 100 us
@@ -34,7 +34,7 @@ volatile byte state = 0;
 void setup() {
   Serial.begin(115200);
 
-  radio.attachUserInterrupt(interruptHandler);
+//  radio.attachUserInterrupt(interruptHandler);
   radio.initialize();
 //  radio.setBandwidth(OOK_BW_10_4);
 //  radio.setRSSIThreshold(-70);
@@ -49,13 +49,17 @@ void setup() {
 }
 
 void loop() {
-  if (fifo.count() > 0) { // wait for a byte to accumulate
-    uint8_t lval = fifo.dequeue();
 
-    Serial.print(micros() / 1000);
-    Serial.print(F(": "));
-    PrintHex83(&lval,4);
-  }
+    interruptHandler();
+    
+    if (fifo.count() > 0) { // wait for a byte to accumulate
+        uint8_t lval = fifo.dequeue();
+
+        Serial.print(micros() / 1000);
+        Serial.print(F(": "));
+        PrintHex83(&lval,4);
+        Serial.println();
+    }
 
 }
 
@@ -68,29 +72,49 @@ void interruptHandler(void) {
   if (last_uS < current_uS) {  // Haven't wrapped around the micros() counter
       uint32_t duration_uS = current_uS - last_uS;
 
-        if (lastPinState != currentPinState) {  // this seems like an illogical check by definition
+        if (lastPinState != currentPinState) {  // this is for debug when not IRQ driven
+#if DEBUGGING > 0
+            Serial.println("DEBUG: Pin Change Detected");
+            Serial.print("duration_uS: ");
+            Serial.println(duration_uS);
+#endif          
 
             if (currentPinState == 1) {  // end of LOW
                 if (duration_uS > RESET_LIMIT) {  // We've waited too long, throw out the queue
+#if DEBUGGING > 0
+                    Serial.print("DEBUG: duration_uS > RESET_LIMIT");
+#endif            
                     state = 0;
                     bits = 0;
                     val = 0;
                     fifo.flush();
                 } else if (duration_uS > GAP_LIMIT) {  // gap between bytes
+#if DEBUGGING > 0
+                    Serial.print("DEBUG: duration_uS > GAP_LIMIT");
+#endif            
                     fifo.enqueue(val);
                     val = 0;
                     bits = 0;
                 }
             } else {  // end of a HIGH
                 if (duration_uS > RESET_LIMIT) {  // We've waited too long, throw out the queue
+#if DEBUGGING > 0
+                    Serial.print("DEBUG: duration_uS > RESET_LIMIT");
+#endif            
                     state = 0;
                     bits = 0;
                     val = 0;
                     fifo.flush();
                 } else if (duration_uS > SHORT_LIMIT) {  // This was a bit pulse
+#if DEBUGGING > 0
+                    Serial.print("DEBUG: duration_uS > SHORT_LIMIT");
+#endif            
                     val <<= 1;
                     bits++;
                     if (duration_uS > LONG_LIMIT) {  // This was a one pulse
+#if DEBUGGING > 0
+                        Serial.print("DEBUG: duration_uS > LONG_LIMIT");
+#endif            
                         val != 1;
                     }
                 } else {  // this was a noise pulse
@@ -123,3 +147,4 @@ void PrintHex83(uint8_t *data, uint8_t length) // prints 8-bit data in hex
     tmp[length*2] = 0;
     Serial.print(tmp);
 }
+
